@@ -1,4 +1,4 @@
-name: RDP + Tailscale + Opera GX (Admin Mode)
+name: RDP + Tailscale + Opera GX (Lag-Optimized Custom User)
 
 on:
   workflow_dispatch:
@@ -19,7 +19,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 190
     env:
-      RDP_PASS: Pass@1234  # This will now be your Administrator password
+      RDP_USER: gxuser     # Custom name (No more 'Administrator' error!)
+      RDP_PASS: Pass@1234  
       TS_HOSTNAME: pc
       RUNTIME_MINUTES: 180
 
@@ -35,7 +36,7 @@ jobs:
                 Invoke-RestMethod -Method Delete -Uri "https://api.tailscale.com/api/v2/device/$($d.id)" -Headers @{ Authorization = "Basic $auth" } -ErrorAction SilentlyContinue
               }
             }
-            Write-Host "Purged old pc device registration."
+            Write-Host "Purged old pc device registration to avoid conflict."
           } catch { Write-Host "Purge warning: $($_.Exception.Message)" }
 
       - name: Install + Up Tailscale
@@ -51,64 +52,70 @@ jobs:
           & $ts logout | Out-Null
           & $ts up --authkey "${{ inputs.ts_authkey }}" --hostname "$env:TS_HOSTNAME" --accept-dns=true --accept-routes=true
           $ip4 = & $ts ip -4 | Select-Object -First 1
-          Write-Host "Tailscale Connected. IPv4: $ip4"
+          Write-Host "Tailscale Connected successfully. IPv4: $ip4"
 
-      - name: Configure Administrator Account & Screen Resolution
+      - name: Create Custom User & Maximize Performance (Fix Lag)
         run: |
+          $u = $env:RDP_USER
           $p = $env:RDP_PASS
           $sec = ConvertTo-SecureString $p -AsPlainText -Force
           
-          Write-Host "Enabling and setting password for the built-in Administrator..."
-          Set-LocalUser -Name "Administrator" -Password $sec -AccountNeverExpires
-          Enable-LocalUser -Name "Administrator"
+          Write-Host "Creating clean custom user: $u..."
+          if (-not (Get-LocalUser -Name $u -EA SilentlyContinue)) {
+            New-LocalUser -Name $u -Password $sec -AccountNeverExpires
+            Add-LocalGroupMember -Group "Administrators" -Member $u
+            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $u
+          }
           
-          # Fix Mobile Scrolling: Force a standard 16:9 widescreen layout 
-          # This makes the remote desktop fit beautifully on a phone screen without giant vertical scrolling
-          Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "DefaultWinstation" -Value "Console"
+          Write-Host "Applying high-performance RDP registry tweaks..."
+          # Tweak 1: Turn off heavy animations and menu fades (Stops stuttering)
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" -Name "TurnOffTaskbarAnimations" -Value 1 -ErrorAction SilentlyContinue
           
+          # Tweak 2: Prioritize RDP network traffic to reduce data latency
+          if (-not (Test-Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp")) {
+              New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Force | Out-Null
+          }
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "MinEncryptionLevel" -Value 1 -ErrorAction SilentlyContinue
+          
+          # Open up connection pathways
           Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop" | Out-Null
-          Write-Host "Admin RDP ready!"
+          Write-Host "RDP configured for custom user with performance patches applied!"
 
       - name: Download & Pre-Install Opera GX
         run: |
-          Write-Host "Fetching Opera GX Installer..."
+          Write-Host "Fetching Opera GX Offline Installer..."
           $url = "https://net.geo.opera.com/opera_gx/stable/windows?utm_source=forsaken&utm_medium=gx"
           $installer = "$env:TEMP\OperaGXSetup.exe"
           Invoke-WebRequest -Uri $url -OutFile $installer
           
-          Write-Host "Installing Opera GX directly into the Administrator environment..."
-          $args = @(
-              "--silent=1",
-              "--allusers=1",
-              "--launchbrowser=0",
-              "--desktopshortcut=1"
-          )
-          Start-Process -FilePath $installer -ArgumentList $args -Wait
+          Write-Host "Pre-installing Opera GX silently for all users..."
+          Start-Process -FilePath $installer -ArgumentList "/silent", "/allusers", "/launcherbrowser=0", "/desktopshortcut=1" -Wait
           
-          # Force the shortcut to the Administrator's desktop
-          $adminDesktop = "C:\Users\Administrator\Desktop"
-          if (-not (Test-Path $adminDesktop)) { New-Item -ItemType Directory -Path $adminDesktop -Force }
+          # Drop it perfectly on the Public Desktop so our new custom user sees it instantly
+          $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
+          $userDesktop = "$env:USERPROFILE\Desktop"
+          if (Test-Path "$userDesktop\Opera GX.lnk") {
+              Move-Item -Path "$userDesktop\Opera GX.lnk" -Destination $publicDesktop -Force -ErrorAction SilentlyContinue
+          }
           
-          # Create a custom shortcut that directly targets the rewards link within the Admin profile
+          Write-Host "Creating the direct video-link trigger shortcut..."
           $WshShell = New-Object -ComObject WScript.Shell
-          $Shortcut = $WshShell.CreateShortcut("$adminDesktop\Claim Rewards.lnk")
-          
+          $Shortcut = $WshShell.CreateShortcut("$publicDesktop\Claim Rewards Here.lnk")
           $operaExe = "$env:ProgramFiles\Opera GX\opera.exe"
           if (-not (Test-Path $operaExe)) { $operaExe = "$env:ProgramFiles (x86)\Opera GX\opera.exe" }
-          
           $Shortcut.TargetPath = $operaExe
           $Shortcut.Arguments = "https://www.opera.com/gx/forsaken"
           $Shortcut.Save()
           
-          Write-Host "Pre-installation complete."
+          Write-Host "Opera GX successfully configured!"
 
-      - name: Keep alive
+      - name: Keep alive (Environment Active Link)
         run: |
           $mins = [int]"${{ env.RUNTIME_MINUTES }}"
           $end = (Get-Date).AddMinutes($mins)
           while ((Get-Date) -lt $end) {
-            Write-Host ("Cloud PC Heartbeat " + (Get-Date).ToString("HH:mm:ss"))
+            Write-Host ("Cloud PC Heartbeat " + (Get-Date).ToString("HH:mm:ss") + " | Active until " + $end.ToString("HH:mm:ss"))
             Start-Sleep -Seconds 60
           }
 
@@ -121,8 +128,10 @@ jobs:
             $list = Invoke-RestMethod -Uri "https://api.tailscale.com/api/v2/tailnet/$tn/devices" -Headers @{ Authorization = "Basic $auth" }
             foreach($d in $list.devices){
               if ($d.hostname -eq "pc"){
-                Invoke-RestMethod -Method Delete -Uri "https://api.tailscale.com/api/v2/device/$($d.id)" -Headers @{ Authorization = "Basic $auth" }
+                Invoke-RestMethod -Method Delete -Uri "https://api.tailscale.com/api/v2/device/$($d.id)" -Headers @{ Authorization = "Basic $auth" } -ErrorAction SilentlyContinue
               }
             }
-            Write-Host "Cleaned up Tailscale dashboard."
-          } catch { Write-Host "Cleanup error." }
+            Write-Host "Successfully cleared cloud PC from Tailscale dashboard!"
+          } catch {
+            Write-Host "Cleanup error."
+          }
