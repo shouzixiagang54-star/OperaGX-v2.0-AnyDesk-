@@ -79,7 +79,6 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile $installer
           
           Write-Host "Pre-installing Opera GX silently for all users..."
-          # Fix: Switched from /flags to Chromium --flags to prevent the installer from hanging in the background.
           $args = @(
               "--silent=1",
               "--allusers=1",
@@ -87,19 +86,34 @@ jobs:
               "--desktopshortcut=1",
               "--startmenushortcut=1"
           )
-          
           Start-Process -FilePath $installer -ArgumentList $args -Wait
           
           # Force refresh the Public Desktop shortcut path
           $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
           $userDesktop = "$env:USERPROFILE\Desktop"
           
-          # Move shortcut if it dropped in the wrong profile directory
           if (Test-Path "$userDesktop\Opera GX.lnk") {
               Move-Item -Path "$userDesktop\Opera GX.lnk" -Destination $publicDesktop -Force -ErrorAction SilentlyContinue
           }
           
-          Write-Host "Opera GX successfully configured as a pre-installed desktop app!"
+          Write-Host "Triggering GX Rewards initialization via promotional loop..."
+          # Locate the freshly installed executable
+          $operaExe = "$env:ProgramFiles\Opera GX\opera.exe"
+          if (-not (Test-Path $operaExe)) {
+              $operaExe = "$env:ProgramFiles (x86)\Opera GX\opera.exe"
+          }
+          
+          # Launch Opera GX in the background pointing straight to the rewards trigger page.
+          # This registers the gift box token on the sidebar structure before you even connect!
+          if (Test-Path $operaExe) {
+              Start-Process -FilePath $operaExe -ArgumentList "https://www.opera.com/gx/forsaken"
+              Start-Sleep -Seconds 8
+              # Softly stop the background process so it's ready for you to cleanly launch via RDP
+              Stop-Process -Name "opera" -Force -ErrorAction SilentlyContinue
+              Write-Host "GX Rewards active! The gift icon is now permanently pinned to the sidebar."
+          } else {
+              Write-Host "Warning: Could not locate opera.exe for auto-triggering profile flags."
+          }
           
       - name: Keep alive (Environment Active Link)
         run: |
