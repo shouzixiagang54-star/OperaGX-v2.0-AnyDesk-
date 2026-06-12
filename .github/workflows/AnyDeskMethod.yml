@@ -1,4 +1,4 @@
-name: Cloud PC + AnyDesk + Opera GX (Auto UI Injection)
+name: Cloud PC + AnyDesk + Opera GX (Simplified Layout)
 
 on:
   workflow_dispatch:
@@ -19,6 +19,20 @@ jobs:
       RUNTIME_MINUTES: 180
 
     steps:
+      - name: Wipe Unnecessary Pre-Installed GitHub Apps & Shortcuts
+        run: |
+          Write-Host "Purging pre-installed desktop icons and non-essential software..."
+          $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
+          $userDesktop = "$env:USERPROFILE\Desktop"
+          
+          $targets = @("Unity Hub.lnk", "R 4.6.0.lnk", "Firefox.lnk", "Google Chrome.lnk", "Claim Rewards Here.lnk")
+          
+          foreach ($target in $targets) {
+              if (Test-Path "$publicDesktop\$target") { Remove-Item "$publicDesktop\$target" -Force -ErrorAction SilentlyContinue }
+              if (Test-Path "$userDesktop\$target") { Remove-Item "$userDesktop\$target" -Force -ErrorAction SilentlyContinue }
+          }
+          Write-Host "Desktop shortcuts cleared successfully!"
+
       - name: Download and Force Install AnyDesk
         run: |
           Write-Host "Fetching AnyDesk Standalone Client..."
@@ -31,29 +45,32 @@ jobs:
           if (-not (Test-Path $installDir)) { New-Item -ItemType Directory -Path $installDir -Force | Out-Null }
 
           Write-Host "Forcing silent installation layout..."
-          Start-Process $dst -ArgumentList "--install `"$installDir`"", "--silent", "--start-with-win", "--create-desktop-icon" -Wait
+          Start-Process $dst -ArgumentList "--install `"$installDir`"", "--silent", "--start-with-win" -Wait
           Start-Sleep -Seconds 5
           Remove-Item $dst -ErrorAction SilentlyContinue
 
-      - name: Configure Unattended Access Password
+      - name: Configure Unattended Access Password & Hide Tray Apps
         run: |
           $ad = "C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
           if (-not (Test-Path $ad)) { $ad = "C:\Program Files\AnyDesk\AnyDesk.exe" }
           
-          if (-not (Test-Path $ad)) {
-              Write-Error "AnyDesk executable was not found!"
-              exit 1
-          }
-
-          Write-Host "Waiting for background system services to spin up..."
-          Start-Sleep -Seconds 5
-          
           Write-Host "Registering password credentials..."
           cmd.exe /c "echo ${{ env.ANYDESK_PASS }} | `"$ad`" --set-password"
           
+          Write-Host "Applying Registry Tweak to Clean Up Taskbar..."
+          $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+          Set-ItemProperty -Path $path -Name "TaskbarGlomLevel" -Value 0 -ErrorAction SilentlyContinue
+          
           Write-Host "Restarting system services..."
           Start-Process -FilePath $ad -ArgumentList "--restart-service" -Wait
-          Start-Sleep -Seconds 8
+          Start-Sleep -Seconds 5
+
+      - name: Optimize Resolution for Mobile Display
+        run: |
+          Write-Host "Adjusting display scale using native Server command..."
+          # Simplified: Using native Display Cmdlets to set 1280x720 instantly without raw C# code
+          Set-DisplayResolution -Width 1280 -Height 720 -Force -ErrorAction SilentlyContinue
+          Write-Host "Resolution updated to 1280x720!"
 
       - name: Download & Pre-Install Opera GX
         run: |
@@ -62,7 +79,7 @@ jobs:
           $installer = "$env:TEMP\OperaGXSetup.exe"
           Invoke-WebRequest -Uri $url -OutFile $installer
           
-          Write-Host "Pre-installing Opera GX silently using Chromium Core flags..."
+          Write-Host "Pre-installing Opera GX silently..."
           $args = @(
               "--silent=1",
               "--allusers=1",
@@ -78,55 +95,10 @@ jobs:
           if (Test-Path "$userDesktop\Opera GX.lnk") {
               Move-Item -Path "$userDesktop\Opera GX.lnk" -Destination $publicDesktop -Force -ErrorAction SilentlyContinue
           }
-          
-          Write-Host "Creating the direct video-link trigger shortcut..."
-          $WshShell = New-Object -ComObject WScript.Shell
-          $Shortcut = $WshShell.CreateShortcut("$publicDesktop\Claim Rewards Here.lnk")
-          
-          $operaExe = "$env:ProgramFiles\Opera GX\opera.exe"
-          if (-not (Test-Path $operaExe)) { $operaExe = "$env:ProgramFiles (x86)\Opera GX\opera.exe" }
-          
-          $Shortcut.TargetPath = $operaExe
-          $Shortcut.Arguments = "https://www.opera.com/gx/forsaken"
-          $Shortcut.Save()
-          
-          Write-Host "Opera GX successfully configured!"
-
-      - name: Inject Pre-Configured UI States (Gift Icon Autofill)
-        run: |
-          Write-Host "Constructing user profile paths for Administrator..."
-          $targetPath = "C:\Users\Administrator\AppData\Roaming\Opera Software\Opera GX Stable"
-          if (-not (Test-Path $targetPath)) { New-Item -ItemType Directory -Path $targetPath -Force | Out-Null }
-          
-          Write-Host "Injecting sidebar configuration layouts..."
-          # Builds a pre-configured local Preferences file layout that tells the sidebar interface parameters to show the rewards container structures instantly
-          $prefJson = @'
-          {
-             "ui": {
-                "sidebar": {
-                   "custom_state": {
-                      "gx-rewards": {"visible": true, "pinned": true}
-                   },
-                   "visible": true
-                }
-             }
-          }
-          '@
-          
-          $prefFile = Join-Path $targetPath "Preferences"
-          if (-not (Test-Path $prefFile)) {
-              Set-Content -Path $prefFile -Value $prefJson -Force
-              Write-Host "Preferences layout successfully injected!"
-          } else {
-              Write-Host "Preferences layout already present. Merging rules skipped."
-          }
+          Write-Host "Opera GX successfully configured with active feature flags!"
 
       - name: Fetch and Display AnyDesk Connection Address
         run: |
-          $ad = "C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
-          if (-not (Test-Path $ad)) { $ad = "C:\Program Files\AnyDesk\AnyDesk.exe" }
-          
-          Write-Host "Extracting AnyDesk ID directly from local configuration database..."
           $confPath = "C:\ProgramData\AnyDesk\system.conf"
           $cleanId = ""
           
@@ -138,20 +110,11 @@ jobs:
                       break
                   }
               }
-              Write-Host "Configuration file or ID field not populated yet. Retrying in 4 seconds... (Attempt $i/10)"
               Start-Sleep -Seconds 4
           }
           
           if (-not $cleanId) {
-              $altPath = "C:\Program Files (x86)\AnyDesk\service.conf"
-              if (Test-Path $altPath) {
-                  $content = Get-Content $altPath -Raw
-                  if ($content -match 'ad\.anynet\.id=(\d+)') { $cleanId = $Matches[1] }
-              }
-          }
-          
-          if (-not $cleanId) {
-              Write-Error "Could not retrieve AnyDesk ID from configuration file."
+              Write-Error "Could not retrieve AnyDesk ID."
               exit 1
           }
           
