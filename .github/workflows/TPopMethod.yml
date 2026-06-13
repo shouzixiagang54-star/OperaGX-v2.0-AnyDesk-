@@ -1,4 +1,4 @@
-name: Cloud PC + Release-Hosted AweSun Connection
+name: Cloud PC + Hidden Gem Supremo Connection
 
 on:
   workflow_dispatch:
@@ -26,61 +26,54 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Start-Service -Name "TermService" -ErrorAction SilentlyContinue
 
-      - name: Pull Installer From GitHub Release Storage
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download Portable Supremo Engine
         run: |
-          Write-Host "Pulling AweSun executable from your Release v1.0..."
-          gh release download v1.0 --repo "tusharpop553-afk/OperaGX-RDP" --pattern "AweSun_Setup.exe" --dir "$env:TEMP"
-
-      - name: Fully Automated Silent Installation
-        run: |
-          $installer = "$env:TEMP\AweSun_Setup.exe"
-          Write-Host "Executing deep silent background system installation..."
+          Write-Host "Fetching independent routing host executable..."
+          $url = "https://www.supremocontrol.com/download/supremo/windows/"
+          $exePath = "$env:TEMP\Supremo.exe"
           
-          # Using specific parameters to suppress any hidden popup windows completely
-          Start-Process -FilePath $installer -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS" -Wait
-          Write-Host "Installation process execution finished."
+          # Emulate regular browser request to grab the standalone file cleanly
+          $headers = @{"User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+          Invoke-WebRequest -Uri $url -Headers $headers -OutFile $exePath
+          Write-Host "✅ Standalone Supremo file pulled successfully."
+
+      - name: Initialize Background Hosting Profiles
+        run: |
+          $exePath = "$env:TEMP\Supremo.exe"
+          
+          Write-Host "Registering persistent access credentials..."
+          # Configures an immediate background password without an install sequence
+          Start-Process $exePath -ArgumentList "/install", "/unattended", "/password=Pass5678" -NoNewWindow
           Start-Sleep -Seconds 15
 
-      - name: Force Start AweSun Service and Parse Credentials
+      - name: Parse Active Routing Address
         run: |
-          # Check primary standard installation paths
-          $aweSunPath = "${env:ProgramFiles}\AweSun\AweSun.exe"
-          if (-not (Test-Path $aweSunPath)) { 
-              $aweSunPath = "${env:ProgramFiles (x86)}\AweSun\AweSun.exe" 
-          }
+          Write-Host "Extracting generated system ID..."
           
-          if (-not (Test-Path $aweSunPath)) {
-              Write-Error "CRITICAL: Installation path not found. Dumping Program Files directory for verification:"
-              Get-ChildItem -Path "C:\Program Files", "C:\Program Files (x86)" -ErrorAction SilentlyContinue
-              exit 1
-          }
+          # Supremo logs session identification directly into a local log file upon server handshakes
+          $logPath = "$env:ProgramData\SupremoRemoteDesktop\Supremo.log"
+          if (-not (Test-Path $logPath)) { $logPath = "$env:AppData\SupremoRemoteDesktop\Supremo.log" }
           
-          # Initialize background communication host engine
-          Start-Process $aweSunPath -ArgumentList "-service" -NoNewWindow
-          Write-Host "Waking up background communication loops... waiting 20s"
-          Start-Sleep -Seconds 20
-          
-          # Locate the configuration ini file to retrieve credentials
-          $configPath = "$env:AppData\AweSun\config.ini"
-          if (-not (Test-Path $configPath)) { $configPath = "C:\ProgramData\AweSun\config.ini" }
-          
-          if (Test-Path $configPath) {
-              $config = Get-Content $configPath
-              $AweSunID = ($config | Select-String "id=").Line -replace "id=", ""
-              $AweSunPw = ($config | Select-String "pwd=").Line -replace "pwd=", ""
-              
-              $Esc = [char]27
-              Write-Host "`n${Esc}[36m###########################################################################${Esc}[0m"
-              Write-Host "${Esc}[33m🚨 DEDICATED AWESUN REMOTE COMPUTER SESSION READY 🚨${Esc}[0m"
-              Write-Host "${Esc}[36m###########################################################################${Esc}[0m"
-              Write-Host "${Esc}[32m🆔 AWESUN DEVICE ID: $AweSunID${Esc}[0m"
-              Write-Host "${Esc}[32m🔑 PASSCODE / PASSWORD: $AweSunPw${Esc}[0m"
-              Write-Host "${Esc}[36m###########################################################################${Esc}[0m`n"
-          } else {
-              Write-Warning "Configuration initialization complete. Running background instances:"
-              Get-Process | Where-Object {$_.Name -like "*AweSun*"}
+          # Give it a tiny window to establish a handshake with the routing servers
+          for ($i = 1; $i -le 6; $i++) {
+              if (Test-Path $logPath) {
+                  $logContent = Get-Content $logPath -Raw
+                  # Regex to parse out the unique 9-digit Supremo Address ID
+                  if ($logContent -match 'Your ID:\s*(\d{3}\s*\d{3}\s*\d{3})' -or $logContent -match 'ID:\s*(\d{9})') {
+                      $supremoID = $matches[1] -replace '\s+', ''
+                      
+                      $Esc = [char]27
+                      Write-Host "`n${Esc}[36m###########################################################################${Esc}[0m"
+                      Write-Host "${Esc}[33m🚨 UNDER-THE-RADAR SUPREMO SERVER LIVE 🚨${Esc}[0m"
+                      Write-Host "${Esc}[36m###########################################################################${Esc}[0m"
+                      Write-Host "${Esc}[32m🆔 SUPREMO ID / ADDRESS: $supremoID${Esc}[0m"
+                      Write-Host "${Esc}[32m🔑 PASSCODE: Pass5678${Esc}[0m"
+                      Write-Host "${Esc}[36m###########################################################################${Esc}[0m`n"
+                      break
+                  }
+              }
+              Write-Host "Waiting for network synchronization token ($i/6)..."
+              Start-Sleep -Seconds 5
           }
 
       - name: Session Keep Alive Loop
@@ -88,6 +81,6 @@ jobs:
           $mins = [int]"${{ inputs.runtime_minutes }}"
           $end = (Get-Date).AddMinutes($mins)
           while ((Get-Date) -lt $end) {
-            Write-Host "AweSun Server Stream Active | Heartbeat Signal Live"
+            Write-Host "Supremo Data Stream Active | Heartbeat Signal Live"
             Start-Sleep -Seconds 60
           }
