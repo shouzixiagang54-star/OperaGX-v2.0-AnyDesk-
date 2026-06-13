@@ -1,4 +1,4 @@
-name: Cloud PC + RustDesk + Opera GX (Ultimate Mobile Controls)
+name: OperaGX PC by Ryxllers.
 
 on:
   workflow_dispatch:
@@ -94,9 +94,15 @@ jobs:
           if ($json.status -eq "ok") { 
               $DownloadUrl = $json.data.downloadPage
               "SCREENSHOT_URL=$DownloadUrl" | Out-File -Append $env:GITHUB_ENV
-              Write-Host "===================================================="
-              Write-Host " CREDENTIALS VIEW LINK: $DownloadUrl"
-              Write-Host "===================================================="
+              
+              # Highly visible terminal highlight layout blocks
+              Write-Host ""
+              Write-Host "###########################################################################" -ForegroundColor Cyan
+              Write-Host "🚨 ATTENTION VIEWERS: LIVE CREDENTIALS CAPTURE URL GENERATED 🚨" -ForegroundColor Yellow
+              Write-Host "###########################################################################" -ForegroundColor Cyan
+              Write-Host "➡️ LINK: $DownloadUrl" -ForegroundColor Green
+              Write-Host "###########################################################################" -ForegroundColor Cyan
+              Write-Host ""
           } else {
               Write-Warning "Gofile capture delivery dropped."
           }
@@ -161,6 +167,7 @@ jobs:
           $mins = [int]$env:RUNTIME_MINUTES
           $end = (Get-Date).AddMinutes($mins)
           while ((Get-Date) -lt $end) {
-            Write-Host "Cloud PC Heartbeat | Ends at: $($end.ToString('HH:mm:ss')) | View Screen at: $env:SCREENSHOT_URL"
+            # Completely stripped out screenshot tracking context strings
+            Write-Host "Cloud PC Active Status | Heartbeat Signal Active | System Session Ends at: $($end.ToString('HH:mm:ss'))"
             Start-Sleep -Seconds 60
           }
