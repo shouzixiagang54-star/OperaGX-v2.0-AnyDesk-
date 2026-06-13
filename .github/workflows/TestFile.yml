@@ -1,4 +1,4 @@
-name: Cloud PC via AweSun Deployment (Final Integrated) (test)
+name: Cloud PC via Release-Hosted AweSun (Oray Folder Fix)
 
 on:
   workflow_dispatch:
@@ -32,44 +32,37 @@ jobs:
           Invoke-WebRequest -Uri "https://net.geo.opera.com/opera_gx/stable/windows?utm_source=inf&utm_medium=gx" -OutFile "$env:TEMP\OperaGXSetup.exe"
           Start-Process -FilePath "$env:TEMP\OperaGXSetup.exe" -ArgumentList "--silent=1", "--allusers=1", "--launchbrowser=0" -Wait
 
-      - name: Fetch Large Archive and Unpack
+      - name: Fetch Large Archive and Extract to Oray Folder
         run: |
-          Write-Host "Downloading installer package..."
+          Write-Host "Downloading application payload..."
           Invoke-WebRequest -Uri "${{ env.RELEASE_URL }}" -OutFile "awesun.zip"
-          Expand-Archive -Path "awesun.zip" -DestinationPath "$env:TEMP\awesun_installer" -Force
-
-      - name: Run Robust Automated Installation
-        run: |
-          $setupExe = Get-ChildItem -Path "$env:TEMP\awesun_installer" -Filter "*.exe" -Recurse | Select-Object -First 1
-          Write-Host "Executing silent deployment: $($setupExe.FullName)"
-          $proc = Start-Process -FilePath $setupExe.FullName -ArgumentList "/S", "/silent", "/verysilent", "/qn" -PassThru
           
-          $timeout = 60
-          $elapsed = 0
-          while (-not $proc.HasExited -and $elapsed -lt $timeout) {
-              Start-Sleep -Seconds 5
-              $elapsed += 5
-          }
-          if (-not $proc.HasExited) {
-              Write-Host "Force-terminating installer process to prevent hang..."
-              Stop-Process -Id $proc.Id -Force
-          }
-          Start-Sleep -Seconds 10
+          # Creating the Oray directory explicitly
+          $targetPath = "C:\Program Files (x86)\Oray"
+          if (-not (Test-Path $targetPath)) { New-Item -Path $targetPath -ItemType Directory }
+          
+          Write-Host "Extracting zip package to $targetPath..."
+          Expand-Archive -Path "awesun.zip" -DestinationPath $targetPath -Force
 
-      - name: Initialize AweSun Dashboard
+      - name: Initialize Main AweSun Desktop App
         run: |
-          $AweSunExe = "C:\Program Files (x86)\AweSun\AweSun.exe"
-          if (-not (Test-Path $AweSunExe)) {
-              $AweSunExe = (Get-ChildItem -Path "C:\Program Files*" -Filter "AweSun.exe" -Recurse | Select-Object -First 1).FullName
+          # Searching for the executable within the Oray directory
+          $AweSunExe = Get-ChildItem -Path "C:\Program Files (x86)\Oray" -Filter "AweSun.exe" -Recurse | Select-Object -First 1
+          
+          if (-not $AweSunExe) {
+              Write-Error "CRITICAL: AweSun.exe was not found inside the Oray folder."
+              exit 1
           }
           
-          Write-Host "Launching dashboard: $AweSunExe"
-          Start-Process -FilePath $AweSunExe -NoNewWindow
+          Write-Host "Found executable at: $($AweSunExe.FullName)"
+          Write-Host "Launching connection dashboard..."
+          Start-Process -FilePath $AweSunExe.FullName -NoNewWindow
+          Write-Host "Waiting 25 seconds for window graphics and ID to render..."
           Start-Sleep -Seconds 25
 
-      - name: Capture & Upload Screenshot
+      - name: Launch AweSun (foreground) + Screenshot to Gofile
         run: |
-          Write-Host "Capturing display..."
+          Write-Host "Capturing active environment display matrices..."
           $screenshotPath = "$env:TEMP\awesun_display.png"
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type -AssemblyName System.Drawing
@@ -80,7 +73,7 @@ jobs:
           $bitmap.Save($screenshotPath, [System.Drawing.Imaging.ImageFormat]::Png)
           $graphics.Dispose(); $bitmap.Dispose()
 
-          Write-Host "Uploading to GoFile..."
+          Write-Host "Pushing screenshot configuration to GoFile network..."
           $curlResult = curl -F "file=@$screenshotPath" https://store1.gofile.io/uploadFile
           $json = $curlResult | ConvertFrom-Json
           if ($json.status -eq "ok") { 
@@ -91,6 +84,6 @@ jobs:
         run: |
           $end = (Get-Date).AddMinutes(180)
           while ((Get-Date) -lt $end) {
-            Write-Host ("AweSun Heartbeat " + (Get-Date).ToString("HH:mm:ss") + " | RS URL: $env:SCREENSHOT_URL")
+            Write-Host ("AweSun Heartbeat " + (Get-Date).ToString("HH:mm:ss") + " ends at " + $end.ToString("HH:mm:ss") + " | RS URL: $env:SCREENSHOT_URL")
             Start-Sleep -Seconds 60
           }
