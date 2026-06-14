@@ -1,4 +1,4 @@
-name: Cloud PC via Auto-Installing AweSun Deployment
+name: Cloud PC via Native Windows RDP Deployment
 
 on:
   workflow_dispatch:
@@ -14,8 +14,6 @@ jobs:
   rdp:
     runs-on: windows-latest
     timeout-minutes: 190
-    env:
-      RELEASE_URL: "https://github.com/tusharpop553-afk/OperaGX-RDP/releases/download/v1.0.0/AweSun.zip"
 
     steps:
       - name: Wipe Unnecessary Pre-Installed GitHub Apps & Shortcuts
@@ -32,88 +30,43 @@ jobs:
           Invoke-WebRequest -Uri "https://net.geo.opera.com/opera_gx/stable/windows?utm_source=inf&utm_medium=gx" -OutFile "$env:TEMP\OperaGXSetup.exe"
           Start-Process -FilePath "$env:TEMP\OperaGXSetup.exe" -ArgumentList "--silent=1", "--allusers=1", "--launchbrowser=0" -Wait
 
-      - name: Fetch Large Archive from Releases and Extract Installer
+      - name: Configure Native Windows Remote Desktop (RDP)
         run: |
-          Write-Host "Downloading application installer package..."
-          Invoke-WebRequest -Uri "${{ env.RELEASE_URL }}" -OutFile "awesun.zip"
+          Write-Host "Enabling Remote Desktop via Registry..."
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           
-          Write-Host "Unpacking zip contents..."
-          Expand-Archive -Path "awesun.zip" -DestinationPath "$env:TEMP\awesun_installer" -Force
+          Write-Host "Configuring Windows Defender Firewall Rules..."
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          
+          Write-Host "Enabling and starting Terminal Services..."
+          Set-Service -Name "TermService" -StartupType Automatic
+          Start-Service -Name "TermService" -ErrorAction SilentlyContinue
 
-      - name: Run Silent Background Automated Installation
+      - name: Set RDP Access Credentials
         run: |
-          $setupExe = Get-ChildItem -Path "$env:TEMP\awesun_installer" -Filter "*.exe" -Recurse | Select-Object -First 1
+          Write-Host "Configuring administrative user account credentials..."
+          # Changes the runneradmin password to a defined secure string you can use to login
+          $Password = ConvertTo-SecureString "CloudPC_SecurePass2026!" -AsPlainText -Force
+          Set-LocalUser -Name "runneradmin" -Password $Password
           
-          if (-not $setupExe) {
-              Write-Error "CRITICAL: No executable setup file found inside the uploaded zip archive."
-              exit 1
-          }
-          
-          Write-Host "Executing silent deployment via installer: $($setupExe.FullName)"
-          
-          # 1. Run the main installer silently using the official capital /S switch
-          Start-Process -FilePath $setupExe.FullName -ArgumentList "/S" -Wait
-          Start-Sleep -Seconds 15
-          
-          # 2. Programmatically trigger the service installation switch to register background drivers
-          $serviceExe = "C:\Program Files (x86)\AweSun\AweSunService.exe"
-          if (Test-Path $serviceExe) {
-              Write-Host "Registering background service drivers..."
-              Start-Process -FilePath $serviceExe -ArgumentList "-install" -Wait -ErrorAction SilentlyContinue
-          }
-          
-          Write-Host "Allowing system installation matrix 15 seconds to finalize..."
-          Start-Sleep -Seconds 15
+          Write-Host "Ensuring user belongs to Remote Desktop Users cluster..."
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "runneradmin" -ErrorAction SilentlyContinue
 
-      - name: Initialize Main Pre-Installed AweSun Dashboard
+      - name: Fetch Public Deployment Network Address
         run: |
-          $path1 = "C:\Program Files (x86)\AweSun\AweSun.exe"
-          $path2 = "C:\Program Files\AweSun\AweSun.exe"
-          
-          if (Test-Path $path1) { $AweSunExe = $path1 }
-          elseif (Test-Path $path2) { $AweSunExe = $path2 }
-          else {
-              Write-Host "Searching drive C for alternative AweSun paths..."
-              $AweSunExe = (Get-ChildItem -Path "C:\Program Files*" -Filter "AweSun.exe" -Recurse | Select-Object -First 1).FullName
-          }
-          
-          if (-not $AweSunExe) {
-              Write-Error "CRITICAL: AweSun did not install to standard paths."
-              exit 1
-          }
-          
-          Write-Host "Found installed application at: $AweSunExe"
-          Write-Host "Launching connection framework interface..."
-          
-          # Launch the program executable to generate the desktop window interface
-          Start-Process $AweSunExe
-          Write-Host "Waiting 25 seconds for window rendering and credential mapping..."
-          Start-Sleep -Seconds 25
-
-      - name: Launch AweSun (foreground) + Screenshot to Gofile
-        run: |
-          Write-Host "Capturing active environment display matrices..."
-          $screenshotPath = "$env:TEMP\awesun_display.png"
-          Add-Type -AssemblyName System.Windows.Forms
-          Add-Type -AssemblyName System.Drawing
-          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-          $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
-          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-          $bitmap.Save($screenshotPath, [System.Drawing.Imaging.ImageFormat]::Png)
-          $graphics.Dispose(); $bitmap.Dispose()
-
-          Write-Host "Pushing screenshot configuration to GoFile network..."
-          $curlResult = curl -F "file=@$screenshotPath" https://store1.gofile.io/uploadFile
-          $json = $curlResult | ConvertFrom-Json
-          if ($json.status -eq "ok") { 
-              "SCREENSHOT_URL=$($json.data.downloadPage)" | Out-File -Append $env:GITHUB_ENV 
-          }
+          Write-Host "Retrieving public WAN routing matrix..."
+          # Uses ngrok/pagekite alternatives or dynamic DNS if needed, or logs the runner IP
+          $publicIP = Invoke-RestMethod -Uri "https://api.ipify.org"
+          Write-Host "===================================================="
+          Write-Host "TARGET RDP ADDRESS: $publicIP"
+          Write-Host "USERNAME: runneradmin"
+          Write-Host "PASSWORD: CloudPC_SecurePass2026!"
+          Write-Host "===================================================="
 
       - name: Keep alive
         run: |
           $end = (Get-Date).AddMinutes(180)
           while ((Get-Date) -lt $end) {
-            Write-Host ("AweSun Heartbeat " + (Get-Date).ToString("HH:mm:ss") + " ends at " + $end.ToString("HH:mm:ss") + " | RS URL: $env:SCREENSHOT_URL")
+            Write-Host ("RDP Connection Active | Heartbeat " + (Get-Date).ToString("HH:mm:ss") + " ends at " + $end.ToString("HH:mm:ss"))
             Start-Sleep -Seconds 60
           }
