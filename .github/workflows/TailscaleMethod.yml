@@ -1,4 +1,4 @@
-name: RDP + Tailscale (Hassle-Free Edition)
+name: Tailscale + Windows App
 
 on:
   workflow_dispatch:
