@@ -1,10 +1,16 @@
-name: Cloud PC via Native Windows RDP Deployment
+name: RDP + Tailscale (Cleaned & Minimal)
 
 on:
   workflow_dispatch:
+    inputs:
+      ts_tailnet:         { description: "Tailscale tailnet (e.g. you@gmail.com)", required: true }
+      ts_authkey:         { description: "Tailscale Auth key", required: true }
+      ts_api_key:         { description: "Tailscale API key", required: true }
+      runtime_minutes:    { description: "Runtime (max 360)", required: false, default: "355" }
 
 permissions:
   contents: read
+  actions: write
 
 defaults:
   run:
@@ -13,60 +19,109 @@ defaults:
 jobs:
   rdp:
     runs-on: windows-latest
-    timeout-minutes: 190
+    timeout-minutes: 370
+    env:
+      RDP_USER: "User"
+      RDP_PASS: "Pass1234"
 
     steps:
+      - name: Force Full HD Resolution
+        run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
+
       - name: Wipe Unnecessary Pre-Installed GitHub Apps & Shortcuts
         run: |
           $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
           $targets = @("Unity Hub.lnk", "R 4.6.0.lnk", "Firefox.lnk", "Google Chrome.lnk", "Claim Rewards Here.lnk")
           foreach ($target in $targets) { Remove-Item "$publicDesktop\$target" -Force -ErrorAction SilentlyContinue }
 
-      - name: Force Full HD Resolution
-        run: Set-DisplayResolution -Width 1920 -Height 1080 -Force
-
-      - name: Download & Force Consumer Build of Opera GX
+      - name: Download, Install & Force-Launch Opera GX (Bypassing Welcome Screens)
         run: |
+          # Download setup file
           Invoke-WebRequest -Uri "https://net.geo.opera.com/opera_gx/stable/windows?utm_source=inf&utm_medium=gx" -OutFile "$env:TEMP\OperaGXSetup.exe"
-          Start-Process -FilePath "$env:TEMP\OperaGXSetup.exe" -ArgumentList "--silent=1", "--allusers=1", "--launchbrowser=0" -Wait
-
-      - name: Configure Native Windows Remote Desktop (RDP)
-        run: |
-          Write-Host "Enabling Remote Desktop via Registry..."
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           
-          Write-Host "Configuring Windows Defender Firewall Rules..."
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Write-Host "Running unattended browser deployment..."
+          Start-Process -FilePath "$env:TEMP\OperaGXSetup.exe" -ArgumentList "--silent=1", "--allusers=1", "--launchbrowser=0", "--skip-setup-screens=1" -Wait
+          Start-Sleep -Seconds 5
+
+          # Locate installed browser launcher
+          $gxPath1 = "$env:ProgramFiles\Opera GX\launcher.exe"
+          $gxPath2 = "$env:ProgramFiles(x86)\Opera GX\launcher.exe"
+          $gxPath3 = "$env:LocalAppData\Programs\Opera GX\launcher.exe"
+
+          if (Test-Path $gxPath1) { $launcher = $gxPath1 }
+          elseif (Test-Path $gxPath2) { $launcher = $gxPath2 }
+          else { $launcher = $gxPath3 }
+
+          if (Test-Path $launcher) {
+              Write-Host "Launching Opera GX directly to Forsaken destination..."
+              # Passing the corrected destination alongside flags to crush initial greeting layouts
+              Start-Process -FilePath $launcher -ArgumentList "https://www.opera.com/gx/forsaken", "--no-first-run", "--no-welcome", "--disable-features=UpgradeToGxl"
+          } else {
+              Write-Warning "Opera GX launcher path could not be mapped statically."
+          }
+
+      - name: Parse Runtime Requirements
+        run: |
+          function IntOr($v,$d){ if("$v" -match '^\d+$'){ [int]$v } else { [int]$d } }
+          $runtime = IntOr("${{ inputs.runtime_minutes }}",355)
+          if ($runtime -gt 360 -or $runtime -lt 1) { $runtime = 355 }
+          "RUNTIME_MINUTES=$runtime" | Out-File -Append $env:GITHUB_ENV
+
+      - name: Purge Legacy Machine Registrations
+        run: |
+          try {
+            $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${{ inputs.ts_api_key }}:"))
+            $tn = [uri]::EscapeDataString("${{ inputs.ts_tailnet }}")
+            $list = Invoke-RestMethod -Uri "https://api.tailscale.com/api/v2/tailnet/$tn/devices" -Headers @{ Authorization = "Basic $auth" }
+            foreach($d in $list.devices){
+              if ($d.hostname -match '^(bullet|pc)[0-9]*$'){
+                Invoke-RestMethod -Method Delete -Uri "https://api.tailscale.com/api/v2/device/$($d.id)" -Headers @{ Authorization = "Basic $auth" } -ErrorAction SilentlyContinue
+              }
+            }
+          } catch {}
+
+      - name: Install & Authenticate Tailscale Network
+        run: |
+          $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          if (-not (Test-Path $ts)) {
+            $url = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+            $dst = "$env:TEMP\tailscale.msi"
+            Invoke-WebRequest -Uri $url -OutFile $dst
+            Start-Process msiexec.exe -ArgumentList "/i","`"$dst`"","/quiet","/norestart" -Wait
+            Remove-Item $dst -Force
+          }
+          & $ts logout | Out-Null
+          & $ts up --authkey "${{ inputs.ts_authkey }}" --hostname "pc" --accept-dns=true --accept-routes=true
+          $ip4 = & $ts ip -4 | Select-Object -First 1
+          Write-Host "Tailscale Dedicated Node IP: $ip4"
+
+      - name: Provision RDP User Identity & Global System Rules
+        run: |
+          Rename-Computer -NewName "pc" -Force -ErrorAction SilentlyContinue
           
-          Write-Host "Enabling and starting Terminal Services..."
-          Set-Service -Name "TermService" -StartupType Automatic
-          Start-Service -Name "TermService" -ErrorAction SilentlyContinue
+          $u=$env:RDP_USER; $p=$env:RDP_PASS
+          $sec = ConvertTo-SecureString $p -AsPlainText -Force
+          if (-not (Get-LocalUser -Name $u -EA SilentlyContinue)) {
+            New-LocalUser -Name $u -Password $sec -AccountNeverExpires
+            Add-LocalGroupMember -Group "Administrators" -Member $u
+            Add-LocalGroupMember -Group "Remote Desktop Users" -Member $u
+          } else {
+            Set-LocalUser -Name $u -Password $sec -AccountNeverExpires
+            Enable-LocalUser -Name $u
+          }
+          Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop" | Out-Null
 
-      - name: Set RDP Access Credentials
+      - name: Structural Window Minimization
         run: |
-          Write-Host "Configuring administrative user account credentials..."
-          # Changes the runneradmin password to a defined secure string you can use to login
-          $Password = ConvertTo-SecureString "CloudPC_SecurePass2026!" -AsPlainText -Force
-          Set-LocalUser -Name "runneradmin" -Password $Password
-          
-          Write-Host "Ensuring user belongs to Remote Desktop Users cluster..."
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "runneradmin" -ErrorAction SilentlyContinue
+          $shell = New-Object -ComObject Shell.Application
+          $shell.MinimizeAll()
 
-      - name: Fetch Public Deployment Network Address
+      - name: Connection Keep-Alive Loop
         run: |
-          Write-Host "Retrieving public WAN routing matrix..."
-          # Uses ngrok/pagekite alternatives or dynamic DNS if needed, or logs the runner IP
-          $publicIP = Invoke-RestMethod -Uri "https://api.ipify.org"
-          Write-Host "===================================================="
-          Write-Host "TARGET RDP ADDRESS: $publicIP"
-          Write-Host "USERNAME: runneradmin"
-          Write-Host "PASSWORD: CloudPC_SecurePass2026!"
-          Write-Host "===================================================="
-
-      - name: Keep alive
-        run: |
-          $end = (Get-Date).AddMinutes(180)
+          $mins = [int]"${{ env.RUNTIME_MINUTES }}"
+          $end = (Get-Date).AddMinutes($mins)
           while ((Get-Date) -lt $end) {
-            Write-Host ("RDP Connection Active | Heartbeat " + (Get-Date).ToString("HH:mm:ss") + " ends at " + $end.ToString("HH:mm:ss"))
+            Write-Host ("Tailscale/RDP Active Engine | Heartbeat " + (Get-Date).ToString("HH:mm:ss") + " ends at " + $end.ToString("HH:mm:ss"))
             Start-Sleep -Seconds 60
           }
