@@ -76,6 +76,20 @@ jobs:
           Write-Host "Forcing resolution calibration matrix..."
           Set-DisplayResolution -Width 1600 -Height 1200 -Force -ErrorAction SilentlyContinue
 
+      - name: Download & Stage High-Reputation Proxy Extension
+        run: |
+          Write-Host "Staging dedicated browser-layer proxy package..."
+          $extDir = "C:\ProxyExtension"
+          if (-not (Test-Path $extDir)) { New-Item -ItemType Directory -Path $extDir -Force | Out-Null }
+          
+          # Fetching stable standalone Chromium extension bundle CRX/ZIP directly
+          $extUrl = "https://github.com/Windscribe/Windscribe-Extension/archive/refs/heads/master.zip"
+          $zipPath = "$env:TEMP\proxy_ext.zip"
+          
+          Invoke-WebRequest -Uri $extUrl -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath $extDir -Force
+          Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+
       - name: Download & Force Consumer Build of Opera GX
         run: |
           Write-Host "Fetching consumer-stable Opera GX Core..."
@@ -157,14 +171,19 @@ jobs:
               Move-Item -Path "$userDesktop\Opera GX.lnk" -Destination $publicDesktop -Force -ErrorAction SilentlyContinue
           }
 
-          Write-Host "Configuring explicit launcher shortcut with forced promo link..."
+          # Locate the precise unpacked folder root containing manifest.json
+          $targetExtPath = Resolve-Path "C:\ProxyExtension\Windscribe-Extension-master" | Select-Object -ExpandProperty Path
+
+          Write-Host "Configuring explicit launcher shortcut with sideloaded extension parameters..."
           $WshShell = New-Object -ComObject WScript.Shell
           $Shortcut = $WshShell.CreateShortcut("$publicDesktop\Opera GX Browser.lnk")
           $Shortcut.TargetPath = $operaExe
-          $Shortcut.Arguments = "https://www.opera.com/gx/forsaken --no-first-run"
+          
+          # Appends the custom unpacked extension folder path cleanly straight into the executable boot parameters
+          $Shortcut.Arguments = "https://www.opera.com/gx/forsaken --no-first-run --load-extension=`"$targetExtPath`""
           $Shortcut.Save()
           
-          Write-Host "Sequence finished. Workspace deployed cleanly with file system locks."
+          Write-Host "Sequence finished. Workspace deployed with browser-isolated proxy injection handles."
 
       - name: Fetch and Display AnyDesk Connection Address
         run: |
