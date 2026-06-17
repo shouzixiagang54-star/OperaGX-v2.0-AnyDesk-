@@ -129,7 +129,7 @@ jobs:
                   $configObj.ui.visibility.GxRewards = $true
               }
 
-              # === LAYER 3: Native High-Speed VPN Node ===
+              # === LAYER 3: Native High-Speed VPN Node (RESTORED) ===
               if (-not $configObj.vpn) { $configObj | Add-Member -MemberType NoteProperty -Name "vpn" -Value (New-Object PSObject) }
               
               if ($configObj.vpn.blacklisted_interfaces -eq $null) { $configObj.vpn | Add-Member -MemberType NoteProperty -Name "blacklisted_interfaces" -Value @() -Force }
