@@ -105,10 +105,6 @@ jobs:
               Start-Sleep -Seconds 2
           }
 
-          # BONUS UPGRADE: Hold initialization focus for 10 seconds to fully compile the profile structures cleanly
-          Write-Host "Allowing browser baseline profile data to stabilize for 10 seconds..."
-          Start-Sleep -Seconds 10
-
           # 3. Force stop browser to release file handles entirely
           Write-Host "Halting engine layer..."
           Stop-Process -Name "opera" -Force -ErrorAction SilentlyContinue
@@ -124,9 +120,9 @@ jobs:
               # Ensure UI node exists as a nested hashtable
               if (-not $configHashtable.ContainsKey('ui')) { $configHashtable['ui'] = @{} }
               if (-not $configHashtable['ui'].ContainsKey('browser')) { $configHashtable['ui']['browser'] = @{} }
-              if (-not $configHashtable['ui']['browser'].ContainsKey('sidebar')) { $configHashtable['ui']['browser']['sidebar'] = @{} }
+              if (-not $configHashtable['ui'].ContainsKey('sidebar')) { $configHashtable['ui']['browser']['sidebar'] = @{} }
               
-              # RECONSTRUCTED TARGET: Mapping for GxRewards structural hierarchy
+              # PREVIOUS LOGIC TARGET: Reconstructed mapping for GxRewards structural hierarchy
               $configHashtable['ui']['browser']['sidebar']['item_prefs'] = @{
                   "visibility" = @{
                       "GxRewards" = $true
@@ -142,16 +138,16 @@ jobs:
               # Safely inject absolute parent visibility node
               $configHashtable['ui']['visibility'] = @{ "GxRewards" = $true }
 
-              # Safely inject proxy engine configurations
+              # MODIFIED: Changed enabled to false and state to free_off so the button is present but waiting for user click
               $configHashtable['freedom'] = @{
                   "proxy_switcher" = @{
                       "bytes_transferred" = "23659"
                       "country_code" = "AS"
-                      "enabled" = $true
+                      "enabled" = $false
                       "forbidden" = $false
                       "last_ui_interaction_time" = 1781733233.724957
                       "selected_region" = "asia"
-                      "stat_badge_state" = "free_on"
+                      "stat_badge_state" = "free_off"
                       "stats" = @{
                           "last_date_stored" = "13426128000000000"
                           "values" = @("2776280")
@@ -180,7 +176,7 @@ jobs:
               Write-Error "CRITICAL TIMEOUT: Preferences file structure completely missing. Injecting fallback layout directory."
               if (-not (Test-Path $profileDir)) { New-Item -ItemType Directory -Path $profileDir -Force | Out-Null }
               
-              $fallbackJson = '{"freedom":{"proxy_switcher":{"bytes_transferred":"23659","country_code":"AS","enabled":true,"forbidden":false,"last_ui_interaction_time":1781733233.724957,"selected_region":"asia","stat_badge_state":"free_on","stats":{"last_date_stored":"13426128000000000","values":["2776280"]},"ui_visible":true}},"ui":{"browser":{"sidebar":{"item_prefs":{"visibility":{"GxRewards":true}},"GxRewards":{"last_action_time":"13426206569601273","last_used_ts":"13426206569603970","notification_type":"1"}}},"visibility":{"GxRewards":true}}}'
+              $fallbackJson = '{"freedom":{"proxy_switcher":{"bytes_transferred":"23659","country_code":"AS","enabled":false,"forbidden":false,"last_ui_interaction_time":1781733233.724957,"selected_region":"asia","stat_badge_state":"free_off","stats":{"last_date_stored":"13426128000000000","values":["2776280"]},"ui_visible":true}},"ui":{"browser":{"sidebar":{"item_prefs":{"visibility":{"GxRewards":true}},"GxRewards":{"last_action_time":"13426206569601273","last_used_ts":"13426206569603970","notification_type":"1"}}},"visibility":{"GxRewards":true}}}'
               Set-Content -Path $prefPath -Value $fallbackJson -Force
               Set-Content -Path $backupPath -Value $fallbackJson -Force
               Set-ItemProperty -Path $prefPath -Name IsReadOnly -Value $true
@@ -194,10 +190,8 @@ jobs:
           Write-Host "Launching layout execution instance under read-only constraints..."
           Start-Process -FilePath $operaExe -ArgumentList "https://www.opera.com/gx/forsaken", "--no-first-run"
 
-          # OPTIMIZED TARGET BUFFER: Shifted focus timing constraint window to exactly 10 seconds
-          Write-Host "Holding instance focus for 10 seconds..."
-          Start-Sleep -Seconds 10
-          
+          Write-Host "Holding instance focus for 5 seconds..."
+          Start-Sleep -Seconds 5
           Write-Host "Unlocking file layers. Restoring read/write system permissions..."
           if (Test-Path $prefPath) { Set-ItemProperty -Path $prefPath -Name IsReadOnly -Value $false }
           if (Test-Path $backupPath) { Set-ItemProperty -Path $backupPath -Name IsReadOnly -Value $false }
